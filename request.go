@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/rs/zerolog"
 	"io/ioutil"
 	"net/http"
 	"strconv"
+
+	"github.com/rs/zerolog"
 )
 
 type BeforeRequestHandler func(req *http.Request) *http.Request
@@ -26,7 +27,7 @@ func request(client *http.Client, method, url string, body []byte, logger *zerol
 	}
 	if err != nil {
 		if logger != nil {
-			logger.Error().Err(err).Msgf("cannot do http request %+v to %s", req, url)
+			logger.Error().Err(err).Interface("request", req).Str("url", url).Bytes("body", body).Msg("Cannot do http request")
 		}
 		return nil, err
 	}
@@ -38,7 +39,7 @@ func processResponse(response *http.Response, logger *zerolog.Logger) ([]byte, e
 	responseBody, err := ioutil.ReadAll(response.Body)
 	if err != nil {
 		if logger != nil {
-			logger.Error().Err(err).Msgf("cannot read response body from %+v", response)
+			logger.Error().Err(err).Interface("response", response).Msg("cannot read response body")
 		}
 		return nil, err
 	}
