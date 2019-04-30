@@ -6,14 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"net/http"
 	u "net/url"
 	"os"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 var pusherPathRegex = regexp.MustCompile("^/apps/([0-9]+)$")
@@ -178,7 +179,7 @@ func (c *Client) TriggerMultiExclusive(ctx context.Context, channels []string, e
 
 func (c *Client) trigger(ctx context.Context, channels []string, eventName string, data interface{}, socketID *string) (*BufferedEvents, error) {
 	logger := log.Ctx(ctx).With().Logger()
-	logger.Debug().Msgf("Event %s received from %s with socket %v and data %s", eventName, channels, socketID, data)
+	logger.Debug().Str("event_name", eventName).Strs("channels", channels).Interface("socket_id", socketID).Interface("data", data).Msg("An event has been received")
 
 	hasEncryptedChannel := false
 	for _, channel := range channels {
@@ -187,39 +188,43 @@ func (c *Client) trigger(ctx context.Context, channels []string, eventName strin
 		}
 	}
 	if len(channels) > maxTriggerableChannels {
-		logger.Error().Msgf("You cannot trigger on more than %d channels at once", maxTriggerableChannels)
-		return nil, fmt.Errorf("You cannot trigger on more than %d channels at once", maxTriggerableChannels)
+		err := fmt.Errorf("you cannot trigger on more than %d channels at once", maxTriggerableChannels)
+		logger.Error().Err(err).Int("max_triggerable_channels", maxTriggerableChannels).Msg("You cannot trigger on more than maximum of channels at once")
+		return nil, err
 	}
 	if hasEncryptedChannel && len(channels) > 1 {
+		err := errors.New("you cannot trigger to multiple channels when using encrypted channels")
 		// For rationale, see limitations of end-to-end encryption in the README
-		logger.Error().Msgf("You cannot trigger to multiple channels when using encrypted channels")
-		return nil, errors.New("You cannot trigger to multiple channels when using encrypted channels")
+		logger.Error().Err(err).Msg("You cannot trigger to multiple channels when using encrypted channels")
+		return nil, err
 	}
 	if !channelsAreValid(channels) {
-		logger.Error().Msgf("At least one of your channels' names are invalid")
-		return nil, errors.New("At least one of your channels' names are invalid")
+		err := errors.New("at least one of your channels' names are invalid")
+		logger.Error().Err(err).Msg("At least one of your channels' names are invalid")
+		return nil, err
 	}
 	if hasEncryptedChannel && !validEncryptionKey(c.EncryptionMasterKey) {
-		logger.Error().Msgf("Your encryptionMasterKey is not of the correct format")
-		return nil, errors.New("Your encryptionMasterKey is not of the correct format")
+		err := errors.New("your encryptionMasterKey is not of the correct format")
+		logger.Error().Err(err).Msg("Your encryptionMasterKey is not of the correct format")
+		return nil, err
 	}
 	if err := validateSocketID(socketID); err != nil {
-		logger.Error().Err(err).Msgf("socket_id %v invalid", socketID)
+		logger.Error().Err(err).Interface("socket_id", socketID).Msg("socket_id is invalid")
 		return nil, err
 	}
 	payload, err := encodeTriggerBody(channels, eventName, data, socketID, c.EncryptionMasterKey)
 	if err != nil {
-		logger.Error().Err(err).Msgf("cannot encode TriggerBody from channels %s with eventName %s and socketId %v", channels, eventName, socketID)
+		logger.Error().Err(err).Str("event_name", eventName).Strs("channels", channels).Interface("socket_id", socketID).Msg("Cannot encode TriggerBody")
 		return nil, err
 	}
 	path := fmt.Sprintf("/apps/%s/events", c.AppId)
 	u, err := createRequestURL("POST", c.Host, path, c.Key, c.Secret, authTimestamp(), c.Secure, payload, nil, c.Cluster)
 	if err != nil {
-		logger.Error().Err(err).Msgf("cannot create RequestURL with host %s, path %s, cluster %s", c.Host, path, c.Cluster)
+		logger.Error().Err(err).Str("host", c.Host).Str("path", path).Str("cluster", c.Cluster).Msg("Cannot create RequestURL")
 	}
 	response, err := c.requestWithLog("POST", u, payload, &logger)
 	if err != nil {
-		logger.Error().Err(err).Msgf("cannot request payload to %s", u)
+		logger.Error().Err(err).Str("url", u).Msg("Cannot request payload")
 		return nil, err
 	}
 
